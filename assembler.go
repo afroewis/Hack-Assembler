@@ -50,101 +50,99 @@ func main() {
 		"KBD":    0x6000,
 	}
 
-	var files = os.Args[1:]
-	for _, arg := range files {
-		var start = time.Now()
+	var arg = os.Args[2]
+	var start = time.Now()
 
-		file, err := os.Open(arg)
+	file, err := os.Open(arg)
 
-		if err != nil {
-			log.Fatal(err)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	scanner := bufio.NewScanner(file)
+
+	for scanner.Scan() {
+		var line = scanner.Text()
+
+		var commentIndex = strings.Index(line, "//")
+		if commentIndex != -1 {
+			line = line[:commentIndex]
 		}
 
-		scanner := bufio.NewScanner(file)
+		line = strings.Trim(line, " ")
 
-		for scanner.Scan() {
-			var line = scanner.Text()
-
-			var commentIndex = strings.Index(line, "//")
-			if commentIndex != -1 {
-				line = line[:commentIndex]
-			}
-
-			line = strings.Trim(line, " ")
-
-			if len(line) == 0 {
-				continue
-			}
-
-			lines = append(lines, line)
+		if len(line) == 0 {
+			continue
 		}
 
-		var instructionNumber = 0
-		for _, line := range lines {
-			if line[0] == '(' {
-				var end = strings.IndexRune(line, ')')
-				var symbol = line[1:end]
-				labels[symbol] = instructionNumber
-				continue
-			}
-			instructionNumber++
+		lines = append(lines, line)
+	}
+
+	var instructionNumber = 0
+	for _, line := range lines {
+		if line[0] == '(' {
+			var end = strings.IndexRune(line, ')')
+			var symbol = line[1:end]
+			labels[symbol] = instructionNumber
+			continue
+		}
+		instructionNumber++
+	}
+
+	for _, line := range lines {
+		if line[0] == '(' {
+			continue
 		}
 
-		for _, line := range lines {
-			if line[0] == '(' {
-				continue
-			}
+		if line[0] == '@' {
+			var value = line[1:]
 
-			if line[0] == '@' {
-				var value = line[1:]
+			if num, err := strconv.Atoi(value); err == nil {
+				str := fmt.Sprintf("%016b", num)
+				output = append(output, str)
+			} else {
+				var addressOrValue int
 
-				if num, err := strconv.Atoi(value); err == nil {
-					str := fmt.Sprintf("%016b", num)
-					output = append(output, str)
+				if val, found := predefinedSymbols[value]; found {
+					addressOrValue = val
+				} else if variables[value] >= 16 {
+					addressOrValue = variables[value]
+				} else if labels[value] > 0 {
+					addressOrValue = labels[value]
 				} else {
-					var addressOrValue int
-
-					if val, found := predefinedSymbols[value]; found {
-						addressOrValue = val
-					} else if variables[value] >= 16 {
-						addressOrValue = variables[value]
-					} else if labels[value] > 0 {
-						addressOrValue = labels[value]
-					} else {
-						addressOrValue = variablesMemoryStart + len(variables)
-						variables[value] = addressOrValue
-					}
-
-					str := fmt.Sprintf("%016b", addressOrValue)
-					output = append(output, str)
+					addressOrValue = variablesMemoryStart + len(variables)
+					variables[value] = addressOrValue
 				}
 
-				continue
+				str := fmt.Sprintf("%016b", addressOrValue)
+				output = append(output, str)
 			}
 
-			var res = parseCInstruction(line)
-			var str = fmt.Sprintf("%016b", res)
-			output = append(output, str)
+			continue
 		}
 
-		var filename = filepath.Base(arg)
-		filename = strings.TrimSuffix(filename, filepath.Ext(filename))
-
-		elapsed(fmt.Sprintf("Translation from %s to bin/%s.hack", arg, filename), start)
-
-		f, err := os.Create(fmt.Sprintf("bin/%s.hack", filename))
-
-		for _, str := range output {
-			_, _ = f.WriteString(fmt.Sprintf("%s\n", str))
-		}
-
-		if err := scanner.Err(); err != nil {
-			log.Fatal(err)
-		}
-
-		_ = f.Close()
-		_ = file.Close()
+		var res = parseCInstruction(line)
+		var str = fmt.Sprintf("%016b", res)
+		output = append(output, str)
 	}
+
+	var filename = filepath.Base(arg)
+	filename = strings.TrimSuffix(filename, filepath.Ext(filename))
+
+	elapsed(fmt.Sprintf("Translation from %s to bin/%s.hack", arg, filename), start)
+
+	f, err := os.Create(fmt.Sprintf("bin/%s.hack", filename))
+
+	for _, str := range output {
+		_, _ = f.WriteString(fmt.Sprintf("%s\n", str))
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Fatal(err)
+	}
+
+	_ = f.Close()
+	_ = file.Close()
 }
 
 func parseCInstruction(line string) int {
